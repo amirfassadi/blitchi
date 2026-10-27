@@ -15,6 +15,11 @@ class DomainError(Exception):
     pass
 
 
+class _StoredDomainError(DomainError):
+    # The business effect was rolled back; the operation outcome must commit.
+    pass
+
+
 def uid() -> str:
     return uuid.uuid4().hex
 
@@ -24,14 +29,28 @@ def encoded(value) -> str:
 
 
 class Core:
-    def __init__(self, database: str | Path, clock: Callable[[], int] | None = None):
+    def __init__(self, database: str | Path, clock: Callable[[], int] | None = None,
+                 *, settlement_delay_seconds: int = 3 * 86400):
+        if (not isinstance(settlement_delay_seconds, int)
+                or settlement_delay_seconds < 0):
+            raise DomainError("invalid_settlement_delay")
+        self.settlement_delay_seconds = settlement_delay_seconds
         self.database = str(database)
         self.clock = clock or (lambda: int(time.time()))
 
     def initialize(self):
         with self._connection() as db:
+            # Never rewrite an old reference database or guess its program end.
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='shows'").fetchone():
+                columns = {r[1] for r in db.execute("PRAGMA table_info(shows)")}
+                if "ends_at" not in columns or "cancellation_deadline_at" not in columns:
+                    raise DomainError("reference_schema_upgrade_required")
+                operation_columns = {r[1] for r in db.execute("PRAGMA table_info(operations)")}
+                if not {"principal_id", "action"} <= operation_columns:
+                    raise DomainError("reference_schema_upgrade_required")
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(Path(__file__).with_name("schema.sql").read_text("utf-8-sig"))
+            db.execute("PRAGMA user_version=2")
 
     @contextmanager
     def _connection(self):
@@ -50,6 +69,9 @@ class Core:
             try:
                 yield db
                 db.commit()
+            except _StoredDomainError as error:
+                db.commit()
+                raise DomainError(str(error)) from error
             except BaseException:
                 db.rollback()
                 raise
@@ -71,21 +93,35 @@ class Core:
         db.execute("INSERT INTO audit(actor,action,target,created_at) VALUES(?,?,?,?)",
                    (actor, action, target, self.clock()))
 
-    def _operation(self, db, channel, key, action, payload, execute):
-        if not key or not channel:
-            raise DomainError("idempotency_key_and_channel_required")
+    def _operation(self, db, channel, principal, key, action, payload, execute):
+        if not key or not channel or not principal:
+            raise DomainError("operation_identity_required")
         self._one(db, "SELECT id FROM channels WHERE id=?", (channel,))
-        fingerprint = hashlib.sha256(encoded([action, payload]).encode()).hexdigest()
-        old = db.execute("SELECT * FROM operations WHERE channel_id=? AND op_key=?",
-                         (channel, key)).fetchone()
+        fingerprint = hashlib.sha256(encoded(payload).encode()).hexdigest()
+        identity = (channel, principal, action, key)
+        old = db.execute("""SELECT * FROM operations WHERE channel_id=?
+            AND principal_id=? AND action=? AND op_key=?""", identity).fetchone()
         if old:
             if old["fingerprint"] != fingerprint:
                 raise DomainError("idempotency_conflict")
-            return json.loads(old["response"])
-        result = execute()
-        db.execute("INSERT INTO operations VALUES(?,?,?,?)",
-                   (channel, key, fingerprint, encoded(result)))
-        return result
+            outcome = json.loads(old["response"])
+            if not outcome["ok"]:
+                raise _StoredDomainError(outcome["error"])
+            return outcome["value"]
+        db.execute("SAVEPOINT business_operation")
+        try:
+            result = execute()
+        except DomainError as error:
+            db.execute("ROLLBACK TO business_operation")
+            db.execute("RELEASE business_operation")
+            db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?)",
+                       (*identity, fingerprint, encoded({"ok": False, "error": str(error)})))
+            raise _StoredDomainError(str(error)) from error
+        else:
+            db.execute("RELEASE business_operation")
+            db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?)",
+                       (*identity, fingerprint, encoded({"ok": True, "value": result})))
+            return result
 
     def _expire(self, db):
         rows = db.execute("SELECT id FROM holds WHERE state='active' AND expires_at<=?",
@@ -110,33 +146,48 @@ class Core:
                        (channel_id, name, financial_owner))
 
     def add_show(self, show_id, center_id, seats, starts_at, sales_close_at,
-                 unit_price, title=""):
+                 unit_price, title="", *, ends_at, cancellation_deadline_at=None):
         seats = list(seats)
+        if cancellation_deadline_at is None:
+            cancellation_deadline_at = ends_at
         if (not seats or len(set(seats)) != len(seats)
-                or any(not isinstance(s, str) or not s.strip() for s in seats)
+                or any(not isinstance(seat, str) or not seat.strip() for seat in seats)
                 or not isinstance(unit_price, int) or unit_price <= 0
+                or not all(isinstance(t, int) for t in
+                           (starts_at, ends_at, cancellation_deadline_at, sales_close_at))
+                or ends_at <= starts_at
                 or sales_close_at > starts_at or sales_close_at <= self.clock()):
             raise DomainError("invalid_show")
         with self._transaction() as db:
-            db.execute("INSERT INTO shows VALUES(?,?,?,?,?,?)",
-                       (show_id, center_id, title, starts_at, sales_close_at, unit_price))
+            db.execute("""INSERT INTO shows
+                (id,center_id,title,starts_at,sales_close_at,unit_price,
+                 ends_at,cancellation_deadline_at) VALUES(?,?,?,?,?,?,?,?)""",
+                (show_id, center_id, title, starts_at, sales_close_at, unit_price,
+                 ends_at, cancellation_deadline_at))
             db.executemany("INSERT INTO seats VALUES(?,?)",
                            [(show_id, seat) for seat in seats])
 
     def inventory(self, show_id):
-        with self._transaction() as db:
-            self._expire(db)
+        # Pure read: physical expiration happens on writes or explicit sweep.
+        with self._connection() as db:
             self._one(db, "SELECT id FROM shows WHERE id=?", (show_id,))
             rows = db.execute("""
                 SELECT s.label, h.state, h.expires_at FROM seats s
                 LEFT JOIN claims c ON c.show_id=s.show_id AND c.label=s.label
                 LEFT JOIN holds h ON h.id=c.hold_id
                 WHERE s.show_id=? ORDER BY s.label""", (show_id,)).fetchall()
+            now = self.clock()
             return [{"seat": r["label"],
-                     "state": "free" if r["state"] is None else
-                              ("sold" if r["state"] == "sold" else "held"),
-                     "expires_at": r["expires_at"] if r["state"] == "active" else None}
+                     "state": ("sold" if r["state"] == "sold" else
+                               "held" if r["state"] == "active" and r["expires_at"] > now
+                               else "free"),
+                     "expires_at": r["expires_at"] if r["state"] == "active"
+                                   and r["expires_at"] > now else None}
                     for r in rows]
+
+    def sweep_expired(self):
+        with self._transaction() as db:
+            self._expire(db)
 
     def _create_hold(self, db, show_id, channel, buyer, seats, ttl):
         show = self._one(db, "SELECT * FROM shows WHERE id=?", (show_id,))
@@ -175,17 +226,17 @@ class Core:
                 self._event(db, "hold.created",
                             {"hold_id": hold, "show_id": show_id, "seats": seats})
                 return {"hold_id": hold, "expires_at": expires}
-            return self._operation(db, channel, key, "reserve", payload, execute)
+            return self._operation(db, channel, buyer, key, "reserve", payload, execute)
 
-    def extend(self, channel, key, hold_id, seconds=300):
+    def extend(self, channel, key, hold_id, seconds=300, *, buyer):
         if not isinstance(seconds, int) or not 1 <= seconds <= 300:
             raise DomainError("invalid_extension")
         with self._transaction() as db:
             self._expire(db)
 
             def execute():
-                h = self._one(db, "SELECT * FROM holds WHERE id=? AND channel_id=?",
-                              (hold_id, channel))
+                h = self._one(db, "SELECT * FROM holds WHERE id=? AND channel_id=? AND buyer_id=?",
+                              (hold_id, channel, buyer))
                 if h["state"] != "active" or h["extended"]:
                     raise DomainError("extension_unavailable")
                 show = self._one(db, "SELECT * FROM shows WHERE id=?", (h["show_id"],))
@@ -194,15 +245,15 @@ class Core:
                            (expiry, hold_id))
                 self._event(db, "hold.extended", {"hold_id": hold_id, "expires_at": expiry})
                 return {"hold_id": hold_id, "expires_at": expiry}
-            return self._operation(db, channel, key, "extend", [hold_id, seconds], execute)
+            return self._operation(db, channel, buyer, key, "extend", [hold_id, seconds], execute)
 
-    def release(self, channel, key, hold_id):
+    def release(self, channel, key, hold_id, *, buyer):
         with self._transaction() as db:
             self._expire(db)
 
             def execute():
-                h = self._one(db, "SELECT * FROM holds WHERE id=? AND channel_id=?",
-                              (hold_id, channel))
+                h = self._one(db, "SELECT * FROM holds WHERE id=? AND channel_id=? AND buyer_id=?",
+                              (hold_id, channel, buyer))
                 if h["state"] == "sold":
                     raise DomainError("sale_requires_cancellation")
                 if h["state"] == "active":
@@ -210,16 +261,17 @@ class Core:
                     db.execute("UPDATE holds SET state='released' WHERE id=?", (hold_id,))
                     self._event(db, "hold.released", {"hold_id": hold_id})
                 return {"hold_id": hold_id}
-            return self._operation(db, channel, key, "release", [hold_id], execute)
+            return self._operation(db, channel, buyer, key, "release", [hold_id], execute)
 
-    def create_order(self, channel, key, hold_id):
+    def create_order(self, channel, key, hold_id, *, buyer):
         with self._transaction() as db:
             self._expire(db)
 
             def execute():
                 h = self._one(db, """SELECT h.*,c.financial_owner FROM holds h
                         JOIN channels c ON c.id=h.channel_id
-                        WHERE h.id=? AND h.channel_id=?""", (hold_id, channel))
+                        WHERE h.id=? AND h.channel_id=? AND h.buyer_id=?""",
+                              (hold_id, channel, buyer))
                 if h["state"] != "active":
                     raise DomainError("hold_not_active")
                 if h["financial_owner"] != "operator":
@@ -237,7 +289,7 @@ class Core:
                             total, show["commission_bps"], self.clock()))
                 self._event(db, "order.created", {"order_id": order})
                 return {"order_id": order, "amount": total, "currency": "IRR"}
-            return self._operation(db, channel, key, "create_order", [hold_id], execute)
+            return self._operation(db, channel, buyer, key, "create_order", [hold_id], execute)
 
     def _review(self, db, order, reason):
         show = self._one(db, """SELECT s.starts_at FROM orders o JOIN holds h
@@ -331,8 +383,9 @@ class Core:
             h = self._one(db, "SELECT * FROM holds WHERE id=?", (new_hold,))
         count = len(seats)
         price = order["expected_amount"] // count
-        commission = order["expected_amount"] * order["commission_bps"] // 10000
-        center_total = order["expected_amount"] - commission
+        # Fractional-rial residue belongs to the operator, not the center.
+        center_total = (order["expected_amount"]
+                        * (10000 - order["commission_bps"])) // 10000
         per_ticket, remainder = divmod(center_total, count)
         for index, seat in enumerate(seats):
             ticket = uid()
@@ -341,7 +394,8 @@ class Core:
                        (ticket, order["id"], h["id"], seat, "valid", price, share, None, None))
             db.execute("INSERT INTO ledger VALUES(?,?,?,?,?)",
                        (uid(), order["center_id"], "sale:" + ticket, share,
-                        show["starts_at"] + 3 * 86400))
+                        max(show["ends_at"], show["cancellation_deadline_at"])
+                        + self.settlement_delay_seconds))
         db.execute("UPDATE holds SET state='sold' WHERE id=?", (h["id"],))
         db.execute("UPDATE orders SET state='completed' WHERE id=?", (order["id"],))
         db.execute("UPDATE payments SET allocated=1 WHERE id=?", (payment["id"],))
@@ -362,7 +416,7 @@ class Core:
                 db.execute("UPDATE holds SET state='sold' WHERE id=?", (hold_id,))
                 self._event(db, "external.sale_confirmed", {"hold_id": hold_id})
                 return {"hold_id": hold_id, "state": "sold"}
-            return self._operation(db, channel, key, "external_sale", [hold_id], execute)
+            return self._operation(db, channel, "machine:" + channel, key, "external_sale", [hold_id], execute)
 
     def cancel_ticket(self, ticket_id, actor):
         """Privileged full-price cancellation only; caller must authorize policy."""
@@ -381,27 +435,35 @@ class Core:
             db.execute("UPDATE tickets SET state='cancelled' WHERE id=?", (ticket_id,))
             db.execute("DELETE FROM claims WHERE show_id=? AND label=? AND hold_id=?",
                        (h["show_id"], t["label"], h["id"]))
+            sale = self._one(db, "SELECT eligible_at FROM ledger WHERE source=?",
+                             ("sale:" + ticket_id,))
             db.execute("INSERT INTO ledger VALUES(?,?,?,?,?)",
                        (uid(), t["center_id"], "cancel:" + ticket_id,
-                        -t["center_share"], self.clock()))
+                        -t["center_share"], max(self.clock(), sale["eligible_at"])))
             self._audit(db, actor, "ticket.cancel", ticket_id)
             self._event(db, "ticket.cancelled", {"ticket_id": ticket_id})
             return dict(self._one(db, "SELECT * FROM refunds WHERE id=?", (refund,)))
 
-    def redeem(self, ticket_id, actor, allowed_show_id):
-        """Caller must derive allowed_show_id from authenticated staff privileges."""
+    def redeem(self, ticket_id, actor, allowed_show_id, *, key):
+        """Actor/show scope must be authenticated by the caller."""
+        if not actor or not key:
+            raise DomainError("actor_and_key_required")
         with self._transaction() as db:
-            t = self._one(db, """SELECT t.*,h.show_id FROM tickets t
+            t = self._one(db, """SELECT t.*,h.show_id,h.channel_id FROM tickets t
                 JOIN holds h ON h.id=t.hold_id WHERE t.id=?""", (ticket_id,))
             if t["show_id"] != allowed_show_id:
                 raise DomainError("forbidden")
-            if t["state"] != "valid":
-                raise DomainError("ticket_not_valid")
-            db.execute("UPDATE tickets SET state='used',used_at=?,used_by=? WHERE id=?",
-                       (self.clock(), actor, ticket_id))
-            self._audit(db, actor, "ticket.redeem", ticket_id)
-            self._event(db, "ticket.used", {"ticket_id": ticket_id})
-            return {"ticket_id": ticket_id, "state": "used"}
+
+            def execute():
+                if t["state"] != "valid":
+                    raise DomainError("ticket_not_valid")
+                db.execute("UPDATE tickets SET state='used',used_at=?,used_by=? WHERE id=?",
+                           (self.clock(), actor, ticket_id))
+                self._audit(db, actor, "ticket.redeem", ticket_id)
+                self._event(db, "ticket.used", {"ticket_id": ticket_id})
+                return {"ticket_id": ticket_id, "state": "used"}
+            return self._operation(db, t["channel_id"], "staff:" + actor, key,
+                                   "redeem", [ticket_id, allowed_show_id], execute)
 
     def mark_refund_paid(self, refund_id, bank_ref, actor):
         if not bank_ref:

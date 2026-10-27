@@ -10,6 +10,10 @@
 
 [سازگاری Docker با Ubuntu](https://docs.docker.com/engine/install/ubuntu/)
 
+## گزینه‌های در حال بررسی
+
+A04 و A06 تعیین می‌کنند Node و broker مستقل در اجرای محصول لازم‌اند یا نه. گزینهٔ سبک: Nginx، Django، worker و PostgreSQL؛ گزینهٔ قبلی: Next.js و Celery/RabbitMQ نیز اضافه می‌شوند. شرح broker و Next در ادامه برای گزینهٔ دوم است و الزام بدون تصمیم محسوب نمی‌شود.
+
 ## اجزا و شبکه
 
 Nginx، Next.js، Django، Celery worker، یک scheduler/dispatcher، RabbitMQ و PostgreSQL. worker و scheduler از image یکسان backend هستند. تنها پورت HTTPS عمومی لازم است؛ HTTP برای redirect یا صدور گواهی مطابق تنظیمات. DB، broker و ابزار مدیریت شبکهٔ عمومی ندارند.
@@ -69,3 +73,13 @@ request_id، order_id، inventory_operation_id و provider_ref پوشانده‌
 ۸. تأیید مسئول عملیاتی و محدودهٔ اعلامی محصول.
 
 هیچ‌کدام از این موارد با داشتن ۲۵ تست نمونهٔ SQLite اثبات نشده‌اند.
+
+## پیش‌نیاز شبکه و رفتار محلی
+
+W005 و T43 باید دسترسی میزبان واقعی به registry imageها، PyPI و در صورت نیاز npm را بررسی کنند؛ بازبودن اینترنت فرض نیست. اگر محدودیت وجود داشت، image و wheel/asset از مسیر مجاز یا بستهٔ آفلاین دارای manifest و digest تهیه شود. نصب نباید مخفیانه registry ناشناس یا mirror تأییدنشده را معتبر بداند.
+
+رفتار verify و برگشت خودکار درگاه خاص مطابق مدارک همان provider در W020/T47 ثبت می‌شود، نه با تعمیم «همهٔ درگاه‌های ایرانی». این سند دربارهٔ مقررات یا رفتار درگاه نامشخص حکم قطعی نمی‌دهد.
+
+## مالک تصمیم‌های عملیاتی
+
+A13 امضا، A14 MFA، A15 rate limit، A16 backup، A17 پایش و A21 توزیع بسته پیش از عرضهٔ قابلیت مربوط باید بسته شوند. نام ابزار و credential واقعی هنوز خالی است.

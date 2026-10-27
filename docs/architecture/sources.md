@@ -26,3 +26,11 @@
 - نسخهٔ patch جدیدتر به‌صورت آزموده ارتقا داده شود؛ این سند فایل نصب نیست.
 - Docker image با digest ثابت و صورت مواد نرم‌افزاری و مجوز وابستگی‌ها ثبت شود.
 - نسخهٔ آزمایشی، canary و release candidate در مبنای عملیاتی استفاده نشود.
+
+## منابع تکمیلی بازبینی
+
+- [زمان PostgreSQL](https://www.postgresql.org/docs/18/functions-datetime.html): تفاوت now و clock_timestamp.
+- [SELECT و SKIP LOCKED](https://www.postgresql.org/docs/18/sql-select.html): گزینهٔ صف کار، نه انتخاب صندلی ناقص.
+- [قفل و deadlock](https://www.postgresql.org/docs/18/explicit-locking.html): ترتیب مشترک و retry.
+
+رفتار درگاه محلی و دسترسی registry نیازمند مدرک provider و میزبان واقعی است؛ این‌ها از روی منابع عمومیِ نامرتبط نتیجه‌گیری نشده‌اند.

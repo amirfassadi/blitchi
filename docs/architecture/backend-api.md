@@ -4,7 +4,7 @@
 
 ## مرزهای کد
 
-ساختار هدف monorepo:
+ساختار هدف پیشنهادی در صورت پذیرش Next.js؛ اگر قالب Django پذیرفته شود، web در backend/templates و assets قرار می‌گیرد و apps/web runtime مستقل نخواهد داشت:
 
 ~~~text
 apps/backend/
@@ -42,7 +42,7 @@ Django Admin برای تنظیمات و پشتیبانی محدود است؛ ث�
 
 - پیشوند /api/v1؛ زمان‌ها ISO 8601 با UTC و مبلغ عدد صحیح ریال.
 - پاسخ خطا دارای code، message، request_id و خطای فیلد است؛ هیچ stack trace یا کلید سرویس بیرونی به مرورگر نمی‌رود.
-- Idempotency-Key برای رزرو، سفارش، شروع پرداخت، لغو و اقدامات مالی لازم است.
+- Idempotency-Key برای رزرو، تمدید، آزادسازی، claim مهمان، quote دارای تخصیص، اعمال تخفیف، سفارش، شروع پرداخت، redeem، لغو و فرمان‌های مالی لازم است. scope و سیاست ذخیرهٔ خطا مطابق قرارداد state-transitions است.
 - 401 برای نشست لازم، 403 برای مجوز ناکافی، 409 برای تعارض ظرفیت یا کلید، 422 یا 400 برای ورودی نامعتبر با قاعدهٔ ثابت در OpenAPI، و 503 برای نبود دسترسی معتبر به مرجع.
 - نتیجهٔ درحال‌پردازش با شناسهٔ عملیات و مسیر پیگیری بازمی‌گردد؛ 202 به معنی فروش موفق نیست.
 - pagination، سقف پاسخ و scope داده برای همهٔ فهرست‌ها تعیین می‌شود.
@@ -56,14 +56,16 @@ Django Admin برای تنظیمات و پشتیبانی محدود است؛ ث�
 | عمومی | GET cinemas، films، screenings و جزئیات | فقط محتوای منتشرشده |
 | موجودی | GET screenings/{id}/inventory?since_version= | بدون اطلاعات مالک رزرو |
 | رزرو | POST holds؛ POST holds/{id}/extend یا release | مالکیت از سرور؛ پاسخ دارای server_time و expires_at |
+| مهمان | POST holds/{id}/claim | اثبات نشست مهمان و ورود؛ انتقال اتمیک مالکیت و بازسنجی سقف |
+| قیمت | POST quotes؛ POST orders/{id}/discounts | quote نسخه‌دار؛ مبلغ و سهمیه از backend |
 | سفارش | POST orders؛ GET orders/{id} | قیمت از backend، فقط خریدار یا مسئول مجاز |
 | پرداخت | POST orders/{id}/payment-attempts | مبلغ از snapshot، URL درگاه allowlist |
 | درگاه | GET/POST providers/{provider}/callback | ورودی غیرقابل اعتماد، سپس استعلام provider |
 | بلیط | GET orders/{id}/tickets | بعد از فروش و پرداخت قطعی |
 | ورودی | POST admissions/validate و admissions/redeem | validate مصرف نیست؛ redeem تراکنشی و دارای مجوز محل |
 | لغو | POST cancellations و GET cancellations/{id} | بررسی قواعد و وضعیت مصرف |
-| مالی | GET centers/{id}/statement؛ POST settlements/prepare، approve، record-payment | مجوز مستقل و کنترل هم‌زمانی مانده |
-| بازپرداخت | POST refunds/{id}/approve و record-payment | تأیید درخواست با پرداخت یکی نیست |
+| مالی | GET centers/{id}/statement؛ POST settlements/prepare، approve، start-transfer، record-payment | مجوز مستقل و کنترل هم‌زمانی مانده |
+| بازپرداخت | POST refunds/{id}/approve، start-transfer و record-payment | تأیید درخواست با پرداخت یکی نیست |
 | عملیات | GET review-cases؛ POST assign، action و escalate | مسئول، موعد و سابقهٔ تغییر |
 | مرکز | مدیریت برنامه و قیمت از /center/... | scope مرکز و تأیید انتشار |
 | اپراتور | مدیریت تنظیمات و گزارش از /operator/... | مجوزهای جدا و audit |
@@ -88,6 +90,10 @@ Django Admin برای تنظیمات و پشتیبانی محدود است؛ ث�
 
 به retry خودکار عملیات تغییردهنده فقط با کلید تک‌اثری معتبر اجازه داده می‌شود. شبکه بیرونی داخل تراکنش قفل‌دار فراخوانی نمی‌شود.
 
+## زیرساخت صف در حال بازبینی
+
+A06 اکنون میان صف PostgreSQL و Celery/RabbitMQ در حال ارزیابی است. [مقایسهٔ گزینه‌ها](decision-options.md) مرجع این بازبینی است؛ شرح broker در ادامه فقط برای گزینهٔ RabbitMQ است. A08 نیاز به Inbox/Outbox ماندگار را مستقل از انتخاب broker حفظ می‌کند.
+
 ## Outbox، صف و تکرار
 
 تغییر دامنه و OutboxEvent در یک commit ثبت می‌شوند. ناشر با lease و تلاش مجدد، پیام را به RabbitMQ می‌فرستد؛ نتیجهٔ انتشار ثبت می‌شود. گم‌شدن تأیید می‌تواند ارسال دوباره بسازد. مصرف‌کننده با ConsumerInbox و قید یکتا نتیجه را یک‌بار اعمال می‌کند.
@@ -107,3 +113,11 @@ publisher confirm و consumer ack فعال می‌شوند. خطای دائمی 
 ## خروجی‌های لازم پیش از ساخت رابط کامل
 
 OpenAPI نسخه‌دار، مدل خطا، جدول وضعیت و فرمان، matrix مجوز، قرارداد provider و دادهٔ آزمایشی باید تولید شوند. TypeScript client از schema تولید و تغییر ناسازگار در CI آشکار شود. client تولیدشده مبلغ یا مجوز را معتبر نمی‌کند؛ backend همیشه مرجع است.
+
+## فرض‌های provider که باید تأیید شوند
+
+هیچ قاعدهٔ عمومی دربارهٔ مهلت verify یا برگشت خودکار درگاه‌های ایرانی در کد فرض نمی‌شود. برای provider انتخابی، مهلت create/verify، معنای query، تفاوت authorized/verified/settled، برگشت خودکار و شناسهٔ بازگشت باید با سند همان provider و sandbox ثبت شود. T47 این رفتار را می‌آزماید. پاسخ «برگشت خورده» باید با دفتر دریافت و بازپرداخت تطبیق داده شود تا وجه دوباره برنگردد.
+
+## قراردادهای مرجع
+
+[فرمان‌ها و وضعیت‌ها](../contracts/state-transitions.md) و [مجوزها](../contracts/permissions.md) به API مقدم‌اند. ApproveRefund، ClaimGuestHold، QuoteOrder، ApplyDiscount، RedeemTicket و StartTransfer باید در OpenAPI نهایی قابل ردیابی باشند؛ بودن متن صفحهٔ frontend جای قرارداد را نمی‌گیرد.

@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS channels (
 CREATE TABLE IF NOT EXISTS shows (
     id TEXT PRIMARY KEY, center_id TEXT NOT NULL REFERENCES centers(id),
     title TEXT NOT NULL DEFAULT '', starts_at INTEGER NOT NULL,
-    sales_close_at INTEGER NOT NULL, unit_price INTEGER NOT NULL CHECK(unit_price>0)
+    sales_close_at INTEGER NOT NULL, unit_price INTEGER NOT NULL CHECK(unit_price>0),
+    ends_at INTEGER NOT NULL CHECK(ends_at>starts_at),
+    cancellation_deadline_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS seats (
     show_id TEXT NOT NULL REFERENCES shows(id), label TEXT NOT NULL,
@@ -83,9 +85,10 @@ CREATE TABLE IF NOT EXISTS review_cases (
     UNIQUE(order_id,reason)
 );
 CREATE TABLE IF NOT EXISTS operations (
-    channel_id TEXT NOT NULL REFERENCES channels(id), op_key TEXT NOT NULL,
+    channel_id TEXT NOT NULL REFERENCES channels(id),
+    principal_id TEXT NOT NULL, action TEXT NOT NULL, op_key TEXT NOT NULL,
     fingerprint TEXT NOT NULL, response TEXT NOT NULL,
-    PRIMARY KEY(channel_id,op_key)
+    PRIMARY KEY(channel_id,principal_id,action,op_key)
 );
 CREATE TABLE IF NOT EXISTS events (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,

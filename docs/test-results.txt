@@ -23,8 +23,17 @@ test_success_does_not_close_other_unknown_payment_case (test_core.CoreTests.test
 test_unauthorized_show_scan_and_empty_actor_roll_back (test_core.CoreTests.test_unauthorized_show_scan_and_empty_actor_roll_back) ... ok
 test_unknown_payment_remains_open (test_core.CoreTests.test_unknown_payment_remains_open) ... ok
 test_unknown_then_success (test_core.CoreTests.test_unknown_then_success) ... ok
+test_cancel_before_maturity_has_zero_eligible_balance (test_regressions.RegressionTests.test_cancel_before_maturity_has_zero_eligible_balance) ... ok
+test_capacity_error_is_replayed_after_seat_is_freed (test_regressions.RegressionTests.test_capacity_error_is_replayed_after_seat_is_freed) ... ok
+test_eligibility_uses_end_and_cancellation_deadline (test_regressions.RegressionTests.test_eligibility_uses_end_and_cancellation_deadline) ... ok
+test_idempotency_key_is_scoped_by_buyer (test_regressions.RegressionTests.test_idempotency_key_is_scoped_by_buyer) ... ok
+test_inventory_is_read_only_even_when_hold_expired (test_regressions.RegressionTests.test_inventory_is_read_only_even_when_hold_expired) ... ok
+test_old_reference_database_is_not_silently_rewritten (test_regressions.RegressionTests.test_old_reference_database_is_not_silently_rewritten) ... ok
+test_other_buyer_cannot_mutate_or_order_hold_in_same_channel (test_regressions.RegressionTests.test_other_buyer_cannot_mutate_or_order_hold_in_same_channel) ... ok
+test_redeem_replays_success_for_same_actor_and_key (test_regressions.RegressionTests.test_redeem_replays_success_for_same_actor_and_key) ... ok
+test_rounding_residue_goes_to_operator (test_regressions.RegressionTests.test_rounding_residue_goes_to_operator) ... ok
 
 ----------------------------------------------------------------------
-Ran 25 tests in 34.591s
+Ran 34 tests in 75.782s
 
 OK

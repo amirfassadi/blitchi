@@ -8,10 +8,11 @@
 
 - دامنه: [جدول ۱۸.۱ سند محصول](../product/product-spec.md).
 - تصمیم‌های محصول: بخش ۲۳.۱ همان سند.
-- تصمیم‌های فنی: [A01 تا A12](../architecture/decisions.md).
+- تصمیم‌های فنی: [A01 تا A23](../architecture/decisions.md).
 - ترتیب مراحل: [طرح مرحله‌بندی B00 تا B10](../architecture/execution-plan.md).
 - تنها فهرست وضعیت کارهای بلوپرینت: [کارها](work-items.md).
 - شواهد لازم: [ماتریس پذیرش](acceptance.md).
+- ردیابی کامل: [نگاشت دامنه و سناریو](traceability.md).
 - رفتار: [فرمان‌ها و وضعیت‌ها](../contracts/state-transitions.md).
 - دسترسی: [ماتریس مجوز](../contracts/permissions.md).
 

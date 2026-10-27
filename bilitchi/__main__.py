@@ -30,10 +30,11 @@ def main():
         core.add_channel("sample-web", name="")
         core.add_show("sample-show", "sample-center", ["A1", "A2", "A3"],
                       starts_at=now + 3600, sales_close_at=now + 3500,
-                      unit_price=1_000_000, title="")
+                      unit_price=1_000_000, title="", ends_at=now + 9000)
         hold = core.reserve("sample-web", "demo-hold", "sample-show",
                             "synthetic-buyer", ["A1", "A2"])
-        order = core.create_order("sample-web", "demo-order", hold["hold_id"])
+        order = core.create_order("sample-web", "demo-order", hold["hold_id"],
+                                  buyer="synthetic-buyer")
         core.record_payment(order["order_id"], "sandbox-only", "synthetic-reference",
                             order["amount"], "succeeded", "sandbox-adapter")
         result = core.order(order["order_id"])
