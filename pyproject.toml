@@ -1,0 +1,12 @@
+[project]
+name = "bilitchi-core"
+version = "0.1.0"
+description = "Standalone reference domain core for cinema ticketing"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["bilitchi*"]
+
+[tool.setuptools.package-data]
+bilitchi = ["schema.sql"]

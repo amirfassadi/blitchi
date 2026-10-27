@@ -1,0 +1,14 @@
+{
+  "business_name": "",
+  "operator_name": "",
+  "cinema_name": "",
+  "domain": "",
+  "logo_url": "",
+  "primary_color": "",
+  "initial_region": "نوشهر",
+  "enabled_packages": ["cinema"],
+  "inventory_provider": "",
+  "payment_provider": "",
+  "currency": "IRR",
+  "production_enabled": false
+}

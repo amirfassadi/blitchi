@@ -1,0 +1,30 @@
+test_blank_business_names (test_core.CoreTests.test_blank_business_names) ... ok
+test_channel_cannot_release_another_hold (test_core.CoreTests.test_channel_cannot_release_another_hold) ... ok
+test_concurrent_scan_only_once (test_core.CoreTests.test_concurrent_scan_only_once) ... ok
+test_concurrent_settlement_cannot_double_record_balance (test_core.CoreTests.test_concurrent_settlement_cannot_double_record_balance) ... ok
+test_duplicate_successful_attempt_refunds_excess (test_core.CoreTests.test_duplicate_successful_attempt_refunds_excess) ... ok
+test_events_persist_across_restart (test_core.CoreTests.test_events_persist_across_restart) ... ok
+test_expiry_and_reacquisition (test_core.CoreTests.test_expiry_and_reacquisition) ... ok
+test_extend_once_and_authoritative_expiry (test_core.CoreTests.test_extend_once_and_authoritative_expiry) ... ok
+test_external_channel_cannot_create_operator_order (test_core.CoreTests.test_external_channel_cannot_create_operator_order) ... ok
+test_external_sale_has_no_operator_financial_records (test_core.CoreTests.test_external_sale_has_no_operator_financial_records) ... ok
+test_group_reservation_is_atomic (test_core.CoreTests.test_group_reservation_is_atomic) ... ok
+test_idempotency_and_payload_conflict (test_core.CoreTests.test_idempotency_and_payload_conflict) ... ok
+test_last_seat_concurrency (test_core.CoreTests.test_last_seat_concurrency) ... ok
+test_late_payment_new_hold (test_core.CoreTests.test_late_payment_new_hold) ... ok
+test_late_payment_taken_seat_refund_no_ticket (test_core.CoreTests.test_late_payment_taken_seat_refund_no_ticket) ... ok
+test_partial_cancellation_preserves_other_ticket (test_core.CoreTests.test_partial_cancellation_preserves_other_ticket) ... ok
+test_reference_cannot_be_reused_for_another_order (test_core.CoreTests.test_reference_cannot_be_reused_for_another_order) ... ok
+test_refund_receipt_unique_and_idempotent (test_core.CoreTests.test_refund_receipt_unique_and_idempotent) ... ok
+test_repeat_callback_one_ticket_and_ledger (test_core.CoreTests.test_repeat_callback_one_ticket_and_ledger) ... ok
+test_scan_cancel_race (test_core.CoreTests.test_scan_cancel_race) ... ok
+test_settlement_maturity_negative_balance_after_cancellation (test_core.CoreTests.test_settlement_maturity_negative_balance_after_cancellation) ... ok
+test_success_does_not_close_other_unknown_payment_case (test_core.CoreTests.test_success_does_not_close_other_unknown_payment_case) ... ok
+test_unauthorized_show_scan_and_empty_actor_roll_back (test_core.CoreTests.test_unauthorized_show_scan_and_empty_actor_roll_back) ... ok
+test_unknown_payment_remains_open (test_core.CoreTests.test_unknown_payment_remains_open) ... ok
+test_unknown_then_success (test_core.CoreTests.test_unknown_then_success) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 34.591s
+
+OK
